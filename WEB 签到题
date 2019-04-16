@@ -1,0 +1,29 @@
+ 
+首先进入index.php，提示“抱歉，您没有登陆权限，请获取权限后访问-----”，猜测是需要绕过鉴权然后再访问，用burp抓包抓到一个认证请求：
+ 
+header里didictf_username是空的，尝试了几次之后发现当该消息头的值为admin时可以通过鉴权：
+ 
+访问这个页面，给出了另外两个php页面的代码：app/Application.php和app/Session.php：
+ 
+先看看Application.php：
+ 
+首先是auth函数，判断消息头中的didictf_username是否等于admin，如果是就通过认证，然后有个处理路径的函数，过滤了../或..\；最后是析构函数__destruct，如果path变量不为空则先过滤路径中的 ../或 ..\，然后再读取文件内容。
+再看一下Session.php，主要代码如下：
+ 
+首先用Application.php中的auth进行认证，然后执行get_key函数，其中get_key的作用是读取../config/key.txt文件的内容作为加密密钥，然后还提示加密密钥和flag都在这个目录下：
+ 
+然后执行session_read函数，session_read代码如下：
+ 
+主要的功能是从cookie中读取名为ddctf_id的cookie的值，然后最后32位作为hash值，其余部分+eancrykey之后做md5加密，然后两者是否相等，相等的话就反序列化cookie值。
+然后如果请求中的nickname参数不为空时，可以把密钥值打印出来。
+如果执行session_read失败，则进入session_create()方法，session_create()代码如下：
+ 
+session_create中，生成一个随机的sessionid，然后把session_id，ip_address、user_agent、user_data放到一个数组里，将这个数组序列化，然后MD5计算密钥+cookiedata的hash值，然后返回序列化字符串+hash值。
+从上面的代码分析中，我们首先发送请求获取一个序列化字符串和hash值，然后将这个串设为cookie值，同时设置nickname不为空，这样就可以获取到加密密钥了，再然后构造读取flag的序列化字符串，然后利用获取到的加密密钥进行md5后作为cookie值就可以了：
+ 
+ 
+注意这一步里的nickname需要有个%s才可以成功读取到加密密钥，否则$data中只有一个%s，第二次读取密钥时因为没有%s所以读取不到值：
+ 
+ 
+ 
+注意path的值，因为过滤了..\ 和../，并且过滤后的长度要等于18才可以成功读取到，所以这里的值应该是....//config/flag.txt ： 
